@@ -1,72 +1,61 @@
-import json
-
-import products
-from cart import dao
-from products import Product
+from products import dao
 
 
-class Cart:
-    def __init__(self, id: int, username: str, contents: list[Product], cost: float):
+class Product:
+    def __init__(self, id: int, name: str, description: str, cost: float, qty: int = 0):
         self.id = id
-        self.username = username
-        self.contents = contents
+        self.name = name
+        self.description = description
         self.cost = cost
+        self.qty = qty
 
     @staticmethod
     def load(data):
-        return Cart(
+        return Product(
             id=data['id'],
-            username=data['username'],
-            contents=[Product(**item) for item in data['contents']],
-            cost=data['cost']
+            name=data['name'],
+            description=data['description'],
+            cost=data['cost'],
+            qty=data['qty']
         )
 
 
-def get_cart(username: str) -> list:
+def list_products() -> list[Product]:
     """
-    Fetch the cart for a user, optimize product fetching, and return product list.
+    Retrieve all products from the database and return as a list of Product objects.
+    Optimized for bulk operations.
     """
+    # Fetch all products from DAO in a single call
+    products = dao.list_products()
 
-    # Fetch cart details from the database in a single query
-    cart_details = dao.get_cart(username)
-    if not cart_details:
-        return []
-
-    # Deserialize JSON contents and collect all product IDs
-    all_product_ids = set()  # Use a set to remove duplicates
-    try:
-        for cart_detail in cart_details:
-            contents = json.loads(cart_detail['contents'])  # Use json.loads for safety and speed
-            all_product_ids.update(contents)
-    except json.JSONDecodeError:
-        pass
-
-    if not all_product_ids:
-        return []
-
-    # Fetch all products in bulk
-    products_map = products.get_products_bulk(list(all_product_ids))  # Bulk fetch all products
-
-    # Build and return the product list in the same order as the cart
-    return [products_map[pid] for cart_detail in cart_details for pid in json.loads(cart_detail['contents']) if pid in products_map]
+    # Use a list comprehension for faster object creation
+    return [Product.load(product) for product in products]
 
 
-def add_to_cart(username: str, product_id: int):
+def get_product(product_id: int) -> Product:
     """
-    Add a product to the user's cart.
+    Retrieve a single product by ID.
     """
-    dao.add_to_cart(username, product_id)
+    # Fetch product data and load it into a Product object
+    product_data = dao.get_product(product_id)
+    if not product_data:
+        raise ValueError(f"Product with ID {product_id} not found.")
+    return Product.load(product_data)
 
 
-def remove_from_cart(username: str, product_id: int):
+def add_product(product: dict):
     """
-    Remove a product from the user's cart.
+    Add a new product to the database.
     """
-    dao.remove_from_cart(username, product_id)
+    dao.add_product(product)
 
 
-def delete_cart(username: str):
+def update_qty(product_id: int, qty: int):
     """
-    Delete the user's cart entirely.
+    Update the quantity of a product. Raise an error if qty is invalid.
     """
-    dao.delete_cart(username)
+    if qty < 0:
+        raise ValueError('Quantity cannot be negative')
+
+    # Perform the update directly in the database
+    dao.update_qty(product_id, qty)
